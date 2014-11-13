@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/andyxning/mod-auth-ldap.svg)](https://travis-ci.org/andyxning/mod-auth-ldap)
+
 mod-auth-ldap
 =========================
 
