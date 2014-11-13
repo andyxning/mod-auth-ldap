@@ -42,7 +42,7 @@ from shinken.basemodule import BaseModule
 
 properties = {
     'daemons': ['webui', 'skonf', 'synchronizer'],
-    'type': 'ad_webui'
+    'type': 'ldap_webui'
 }
 
 

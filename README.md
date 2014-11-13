@@ -10,4 +10,4 @@ Changes with [shinken-monitoring/mod-auth-active-directory](https://github.com/s
     * check that the user http client provided exactly exists
     * check that the user password is correct
   * authorization
-    * the user is in ldap_user 
+    * the user is in ldap_user(other ldap_* are not support by this module, however you can add it if you want. It will be easy to do this.) 
