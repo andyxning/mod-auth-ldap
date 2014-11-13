@@ -1,7 +1,7 @@
 mod-auth-ldap
 =========================
 
-Shinken module for UI authentification with OpenLDAP
+Shinken module for WebUI authentification with OpenLDAP
 
 Changes with [shinken-monitoring/mod-auth-active-directory](https://github.com/shinken-monitoring/mod-auth-active-directory)
 -------------------------
