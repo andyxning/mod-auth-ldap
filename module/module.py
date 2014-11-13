@@ -3,7 +3,7 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2012:
-#    Gabes Jean, naparuba@gmail.com
+# Gabes Jean, naparuba@gmail.com
 #    Gerhard Lausser, Gerhard.Lausser@consol.de
 #    Gregory Starck, g.starck@gmail.com
 #    Hartmut Goebel, h.goebel@goebel-consult.de
@@ -24,8 +24,9 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-This class is for linking the WebUI with active directory,
-like check passwords, or get photos.
+This class is for linking the WebUI with LDAP.
+Based on the work the shinken-monitoring/mod-auth-active-directory.
+link: https://github.com/shinken-monitoring/mod-auth-active-directory
 """
 
 import os
@@ -42,74 +43,122 @@ from shinken.basemodule import BaseModule
 properties = {
     'daemons': ['webui', 'skonf', 'synchronizer'],
     'type': 'ad_webui'
-    }
+}
 
 
 # called by the plugin manager
 def get_instance(plugin):
-    logger.debug("[Active Directory UI] Get an Active Directory/OpenLdap UI module for plugin %s" % plugin.get_name())
+    logger.debug("[WebUI LDAP] Get an LDAP module for plugin %s" %
+                 plugin.get_name())
     if not ldap:
-        raise Exception('The module python-ldap is not found. Please install it.')
-    instance = AD_Webui(plugin)
+        raise Exception('The module python-ldap is not found. Please install '
+                        'it.')
+    instance = LDAP_Webui(plugin)
     return instance
-
-
-class AD_Webui(BaseModule):
+class LDAP_Webui(BaseModule):
     def __init__(self, modconf):
         BaseModule.__init__(self, modconf)
         self.ldap_uri = getattr(modconf, 'ldap_uri', None)
         self.username = getattr(modconf, 'username', '')
         self.password = getattr(modconf, 'password', '')
         self.basedn = getattr(modconf, 'basedn', '')
+
+        # added for compatible with nagios with Apache mod_authnz_ldap
+        # For other ldap_* options you can add them just like the ldap_user
+        # one, if desired.
+        self.ldap_users = []
+        if hasattr(modconf, 'ldap_user'):
+            ldap_user_list = getattr(modconf, 'ldap_user', '')
+            ldap_users = ldap_user_list.split(',')
+            if ldap_users != []:
+                for user in ldap_users:
+                    self.ldap_users.append(user.strip())
+
+
         # If we got no uri, we bailout...
         if not self.ldap_uri:
             self.active = False
         else:
             self.active = True
         self.con = None
-        # Switch between active directory and OpenLdap mode
-        self.mode = getattr(modconf, 'mode', 'ad')
-        if self.mode not in ['ad', 'openldap']:
-            raise Exception('WebUI Auth ldap module error, mode is not in ad or openldap')
 
-        self.retrieveAttributes = {
-            'ad' : ["userPrincipalName", "thumbnailPhoto", "samaccountname", "email"],
-            'openldap' : ["cn", "jpegphoto", "uid", "mail"]
-            }[self.mode]
-        self.photo_attr = {
-            'ad' : 'thumbnailPhoto',
-            'openldap' : 'jpegPhoto'
-            }[self.mode]
-        self.name_id = {
-            'ad' : 'userPrincipalName',
-            'openldap' : 'uid'
-            }[self.mode]
-        self.auth_key = {
-            'ad' : 'userPrincipalName',
-            'openldap' : 'dn'
-            }[self.mode]
-        self.search_format = {
-            'ad' : "(| (samaccountname=%s)(mail=%s))",
-            'openldap' : "(| (uid=%s)(mail=%s))"
-            }[self.mode]
-        
+        # for little result return to the client. If attributes are None in search_ext_s
+        # all the attributes with the specified user will be returned.
+        self.retrieve_attributes = ["email"]
+        self.auth_key = 'dn'
+        self.search_format = "(&(objectCategory=Person)(objectClass=User)(sAMAccountName=%s))"
+
 
     # Try to connect if we got true parameter
     def init(self):
         if not self.active:
-            return
-#        self.connect()
+            logger.error("[WebUI LDAP] Init error, lost LDAP uri in "
+                         "configuration file. LDAP error: %s, %s" %
+                         (e, str(e.__dict__)))
+            return None
+
+    # Give LDAP dn for a user
+    def find_user_dn(self, username):
+
+        logger.info(
+            "[WebUI LDAP] Trying to get user dn for user %s" % username)
+        search_scope = ldap.SCOPE_SUBTREE
+
+        # wait for at most 3s to get an result, or an error ldap.TIMEOUT will
+        # be raised. For more info: http://www.python-ldap.org/doc/html/
+        # ldap.html?highlight=simple_bind_s#ldap.ldapObject.search
+        time_out = 3
+
+        # search for at most one user with name "username" for compatible
+
+      # with mod_authnz_ldap
+        size_limit = 1
+
+        search_filter = self.search_format % username
+        logger.info("[WebUI LDAP] Filter %s" % search_filter)
+        try:
+            res = self.con.search_ext_s(base=self.basedn,
+                                        scope=search_scope,
+                                        filterstr=search_filter,
+                                        attrlist=self.retrieve_attributes,
+                                        timeout=time_out,
+                                        sizelimit=size_limit)
+        except ldap.TIMEOUT, e:
+            logger.error("[WebUI LDAP] LDAP error: %s, %s" %
+                         (e, str(e.__dict__)))
+            return None
+        logger.info("[WebUI LDAP] Find user dn of %s" % username)
+
+        if res == []:
+            # user can not be authenticated
+            return None
+        else:
+            dn, attrs = res[0]
+            logger.info(res)
+            logger.info(attrs)
+            return dn
+
+
 
     def connect(self):
-        logger.debug("[Active Directory UI] Trying to initialize the AD/Ldap connection")
+        logger.debug("[WebUI LDAP] Trying to initialize the LDAP"
+                     " connection")
         self.con = ldap.initialize(self.ldap_uri)
         self.con.set_option(ldap.OPT_REFERRALS, 0)
 
-        logger.debug("[Active Directory UI] Trying to connect to AD/Ldap %s with user %s  on baseDN %s" % (self.ldap_uri, self.username, self.basedn))
-        # Any errors will throw an ldap.LDAPError exception
-        # or related exception so you can ignore the result
-        self.con.simple_bind_s(self.username, self.password)
-        logger.info("[Active Directory UI] AD/Ldap Connection done")
+        logger.debug("[WebUI LDAP] Trying to connect to LDAP %s "
+                     "with user %s  on baseDN %s" %
+                     (self.ldap_uri, self.username, self.basedn))
+        # Any errors will throw an ldap.LDAPError exception or related
+        # exception, so you can return.
+        try:
+            self.con.simple_bind_s(self.username, self.password)
+        except ldap.LDAPError, e:
+            logger.error("[WebUI LDAP] Bind error. Can not bind to "
+                         "LDAP server with user %s. LDAP error: %s, %s" %
+                         (self.username, e, str(e.__dict__)))
+            return None
+        logger.info("[WebUI LDAP] LDAP Connection done")
 
 
     def disconnect(self):
@@ -121,151 +170,40 @@ class AD_Webui(BaseModule):
         self.app = app
 
 
-    # Give the entry for a contact
-    def find_contact_entry(self, contact):
-        if not self.active:
-            return None
-
-        if not contact:
-            return None
+    # Try to auth a user in the LDAP dir
+    def check_auth(self, username, password):
+        if not username or not password:
+            return False
 
         # First we try to connect, because there is no "KEEP ALIVE" option
         # available, so we will get a drop after one day...
-        self.connect()
+        if not self.con:
+            self.connect()
 
-        # In the synchronizer the object can be a dict
-        if isinstance(contact, dict):
-            cname = contact.get('contact_name', '')
-            email = contact.get('email', '')
-        else:
-            cname = contact.get_name()
-            email = contact.email
+        user_dn = self.find_user_dn(username)
 
-        logger.info("[Active Directory UI] AD/LDAP: search for contact %s" % cname)
-        searchScope = ldap.SCOPE_SUBTREE
-        ## retrieve all attributes
-        #retrieveAttributes = ["userPrincipalName", "thumbnailPhoto", "samaccountname", "email"]
-
-        searchFilter = self.search_format % (cname, email)
-        logger.info("[Active Directory UI] Filter %s" % str(searchFilter))
+        logger.debug(
+            "[WebUI LDAP] Trying to authenticate with user %s" % username)
+        # Any errors will throw an ldap.LDAPError exception or related
+        # exceptions, so you can know if the password is correct.
         try:
-            ldap_result_id = self.con.search(self.basedn, searchScope, searchFilter, self.retrieveAttributes)
-            result_set = []
-            while 1:
-                result_type, result_data = self.con.result(ldap_result_id, 0)
-                if (result_data == []):
-                    logger.warning("[Active Directory UI] No result for %s" % cname)
-                    return None
-
-                if result_type == ldap.RES_SEARCH_ENTRY:
-                    (_, elts) = result_data[0]
-                    if self.mode =='openldap':
-                        elts['dn'] = str(result_data[0][0])
-                    try:
-                        account_name = elts[self.name_id][0]
-                    except Exception:
-                        account_name = str(result_data[0])
-                    # Got a result, try to get photo to write file
-                    logger.info("[Active Directory UI] Find account principalname %s" % account_name)
-                    return elts
+            self.con.simple_bind_s(user_dn, password)
+            # authenticate success
+            logger.debug("[WebUI LDAP] Authenticate success by LDAP with "
+                         "user %s" % username)
         except ldap.LDAPError, e:
-            logger.error("[Active Directory UI] Ldap error: %s, %s" % (e, str(e.__dict__)))
-            return None
-        # Always clean on exit
-        finally:
+            # authenticate error
+            logger.error("[WebUI LDAP] LDAP auth error: %s" % str(e))
+            return False
+
+        logger.debug("[WebUI LDAP] Trying to authorize with user %s" % username)
+        if username in self.ldap_users:
+            logger.debug("[WebUI LDAP] Authorize success with user %s" %
+                         username)
+            # authorize success
             self.disconnect()
-
-    # One of our goal is to look for contacts and get all pictures
-    def manage_initial_broks_done_brok(self, b):
-        if self.con is None:
-            return
-        logger.info("[Active Directory UI] AD/LDAP: manage_initial_broks_done_brok, go for pictures")
-
-        searchScope = ldap.SCOPE_SUBTREE
-        ## retrieve all attributes - again adjust to your needs - see documentation for more options
-        #retrieveAttributes = ["userPrincipalName", "thumbnailPhoto", "samaccountname", "email"]
-
-        logger.info("[Active Directory UI] Contacts? %d" % len(self.app.datamgr.get_contacts()))
-
-        for c in self.app.datamgr.get_contacts():
-            logger.debug("[Active Directory UI] Doing photo lookup for contact: %s" % c.get_name())
-            elts = self.find_contact_entry(c)
-
-            if elts is None:
-                logger.warning("[Active Directory UI] No ldap entry for %s" % c.get_name())
-                continue
-
-            # Ok, try to get photo from the entry
-            try:
-                photo = elts[self.photo_attr][0]
-                try:
-                    p = os.path.join(self.app.photo_dir, c.get_name()+'.jpg')
-                    f = open(p, 'wb')
-                    f.write(photo)
-                    f.close()
-                    logger.info("[Active Directory UI] Photo wrote for %s" % c.get_name())
-                except Exception, exp:
-                    logger.error("[Active Directory UI] Cannot write %s : %s" % (p, str(exp)))
-            except KeyError:
-                logger.warning("[Active Directory UI] No photo for %s" % c.get_name())
-
-    # Try to auth a user in the ldap dir
-    def check_auth(self, user, password):
-        # If we do not have an ldap uri, no auth :)
-        if not self.ldap_uri:
-            return False
-
-        logger.debug("[Active Directory UI] Trying to auth by ldap with user %s" % user)
-
-        c = self.app.datamgr.get_contact(user)
-
-        if not c:
-            logger.warning("[Active Directory UI] AD/Ldap: invalid user %s (not found)" % user)
-            return False
-
-        # I don't know why, but ldap automagically auth void password. That's just stupid I think
-        # so we don't allow them.
-        if not password:
-            logger.warning("[Active Directory UI] AD/Ldap: void password are not allowed (user:%s)" % user)
-            return False
-
-        # first we need to find the principalname of this entry
-        # because it can be a user name like j.gabes, but we should auth by ldap
-        # with j.gabes@google.com for example
-        elts = self.find_contact_entry(c)
-
-        # no user found, exit
-        if elts is None:
-            return False
-
-        try:
-            # On AD take the uid / principalename
-            if self.mode == 'ad':
-                # Maybe the entry is void....
-                if self.auth_key in elts:
-                    account_name = elts[self.auth_key][0]
-                else:
-                    account_name = user
-            else: # For openldap, use the full DN
-                account_name = elts[self.auth_key]
-        except KeyError:
-            logger.warning("[Active Directory UI] Cannot find the %s entry, so use the user entry" % self.auth_key)
-            account_name = user
-
-        local_con = ldap.initialize(self.ldap_uri)
-        local_con.set_option(ldap.OPT_REFERRALS, 0)
-
-        # Any errors will throw an ldap.LDAPError exception
-        # or related exception so you can ignore the result
-        try:
-            local_con.simple_bind_s(account_name, password)
-            logger.info("[Active Directory UI] AD/Ldap Connection done with user %s " % user)
             return True
-        except ldap.LDAPError, exp:
-            logger.error("[Active Directory UI] Ldap auth error: %s" % str(exp))
-
-        # The local_con will automatically close this connection when
-        # the object will be deleted, so no close need
-
-        # No good? so no auth :)
-        return False
+        else:
+            #authorize error
+            self.disconnect()
+            return False

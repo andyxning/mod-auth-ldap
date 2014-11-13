@@ -1,10 +1,10 @@
 {
-  "name": "auth-active-directory",
+  "name": "auth-ldap",
   "types": ["module"],
-  "version": "1.4",
-  "homepage": "http://github.com/shinken-monitoring/mod-auth-active-directory",
-  "author": "Jean Gabès",
-  "description": "Active directory auth for WebUI",
+  "version": "1.5",
+  "homepage": "http://github.com/andyxning/mod-auth-ldap",
+  "author": "Jean Gabès", 
+  "description": "ldap auth for WebUI",
   "contributors": [
     {
       "name": "Jean Gabès",
@@ -14,8 +14,12 @@
       "name": "Cyrille Josselin",
       "email": "cyrjoss@yahoo.fr"
     }
+    {
+      "name": "Ning Xie",
+      "email": "andy.xning@foxmail.com"
+    }
   ],
-  "repository": "https://github.com/shinken-monitoring/mod-auth-active-directory",
+  "repository": "https://github.com/andyxning/mod-auth-ldap",
   "keywords": [
     "module",
     "broker",
