@@ -30,7 +30,6 @@ link: https://github.com/shinken-monitoring/mod-auth-active-directory
 """
 
 import os
-import threading
 
 try:
     import ldap
@@ -88,8 +87,6 @@ class LDAP_Webui(BaseModule):
         self.retrieve_attributes = ["email"]
         self.auth_key = 'dn'
         self.search_format = "(&(objectCategory=Person)(objectClass=User)(sAMAccountName=%s))"
-
-        self.lock = threading.RLock()
 
     # Try to connect if we got true parameter
     def init(self):
@@ -174,40 +171,39 @@ class LDAP_Webui(BaseModule):
 
     # Try to auth a user in the LDAP dir
     def check_auth(self, username, password):
-           
-        with self.lock:           
-            if not username or not password:
-                return False
+                   
+        if not username or not password:
+            return False
 
-            # First we try to connect, because there is no "KEEP ALIVE" option
-            # available, so we will get a drop after one day...
-            if not self.con:
-                self.connect()
+        # First we try to connect, because there is no "KEEP ALIVE" option
+        # available, so we will get a drop after one day...
+        if not self.con:
+            self.connect()
 
-            user_dn = self.find_user_dn(username)
+        user_dn = self.find_user_dn(username)
 
-            logger.debug(
-                "[WebUI LDAP] Trying to authenticate with user %s" % username)
-            # Any errors will throw an ldap.LDAPError exception or related
-            # exceptions, so you can know if the password is correct.
-            try:
-                self.con.simple_bind_s(user_dn, password)
-                # authenticate success
-                logger.debug("[WebUI LDAP] Authenticate success by LDAP with "
-                             "user %s" % username)
-            except ldap.LDAPError, e:
-                # authenticate error
-                logger.error("[WebUI LDAP] LDAP auth error: %s" % str(e))
-                return False
+        logger.debug(
+            "[WebUI LDAP] Trying to authenticate with user %s" % username)
+        # Any errors will throw an ldap.LDAPError exception or related
+        # exceptions, so you can know if the password is correct.
+        try:
+            self.con.simple_bind_s(user_dn, password)
+            # authenticate success
+            logger.debug("[WebUI LDAP] Authenticate success by LDAP with "
+                         "user %s" % username)
+        except ldap.LDAPError, e:
+            # authenticate error
+            logger.error("[WebUI LDAP] LDAP auth error: %s" % str(e))
+            return False
 
-            logger.debug("[WebUI LDAP] Trying to authorize with user %s" % username)
-            if username in self.ldap_users:
-                logger.debug("[WebUI LDAP] Authorize success with user %s" %
-                             username)
-                # authorize success
-                self.disconnect()
-                return True
-            else:
-                #authorize error
-                self.disconnect()
-                return False
+        logger.debug("[WebUI LDAP] Trying to authorize with user %s" % username)
+        if username in self.ldap_users:
+            logger.debug("[WebUI LDAP] Authorize success with user %s" %
+                         username)
+            # authorize success
+            self.disconnect()
+            return True
+        else:
+            #authorize error
+            self.disconnect()
+            return False
