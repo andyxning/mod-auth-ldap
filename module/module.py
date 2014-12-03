@@ -41,7 +41,7 @@ from shinken.basemodule import BaseModule
 
 
 properties = {
-    'daemons': ['webui', 'skonf', 'synchronizer'],
+    'daemons': ['webui'],
     'type': 'ldap_webui'
 }
 
@@ -181,7 +181,10 @@ class LDAP_Webui(BaseModule):
             self.connect()
 
         user_dn = self.find_user_dn(username)
-
+        # auth timeout or have no ldap record, so auth false
+        if user_dn is None:
+            return False
+            
         logger.debug(
             "[WebUI LDAP] Trying to authenticate with user %s" % username)
         # Any errors will throw an ldap.LDAPError exception or related
