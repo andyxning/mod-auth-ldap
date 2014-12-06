@@ -16,4 +16,5 @@ Changes with [shinken-monitoring/mod-auth-active-directory](https://github.com/s
 
 TODO
 ----
-* check if the ldap configutation file's contents has been changed before each auth, thus to simulate the reload functionality after change the ldap_user option in auth-ldap.cfg file, in order to prevent a reload of the Shinken's broker daemon.
+* check if the ldap configutation file's contents has been changed before each auth, thus to simulate the reload functionality after change the ldap_user option in auth-ldap.cfg file, in order to prevent a reload of the Shinken's broker daemon
+* use the macros defined in resource.d directory to hold the information about ldap, such as username, password and ldap address 
